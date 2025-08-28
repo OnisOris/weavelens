@@ -1,44 +1,47 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "weavelens"
 dynamic = ["version"]
-description = "This module is needed to control your documents"
-requires-python = ">=3.10"
+description = "Local-first RAG service with Weaviate v4, FastAPI, and Telegram bot"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
 authors = [
     {name = "Michael", email = "onisoris@yandex.ru"},
-    {name = "Egor", email = "egor.goncharov.oisa@mail.ru"},
+    {name = "Egor", email = "egor.goncharov.oisa@mail.ru"}
 ]
-maintainers = [
-    {name = "Michael", email = "onisoris@yandex.ru"}
-]
+urls = {Homepage = "https://github.com/OnisOris/weavelens"}
+
 dependencies = [
-    "weaviate-client>=4.16.9",
+  "weaviate-client>=4.16.9",
+  "fastapi",
+  "uvicorn[standard]>=0.30",
+  "aiogram",
+  "pydantic",
+  "python-dotenv>=1.0",
+  "httpx>=0.27",
+  "watchfiles>=0.21",
+  "sentence-transformers>=3.0",
+  "numpy>=1.26",
+  "scikit-learn>=1.5",
+  "prometheus-client>=0.20",
+  "orjson>=3.10",
+  "cryptography>=43.0",
+  "pypdf>=4.2",
+  "python-docx>=1.1.2"
 ]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Topic :: Software Development :: Build Tools",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13"
-]
-license = "Apache-2.0"
-license-files = ["LICENSE*"]
-readme = {file = "README.md", content-type = "text/markdown"}
 
-
-[project.urls]
-Homepage = "https://github.com/OnisOris/weavelens"
-Documentation = "https://onisoris.github.io/weavelens"
-Repository = "https://github.com/OnisOris/weavelens.git"
-Issues = "https://github.com/OnisOris/weavelens/issues"
+[project.optional-dependencies]
+llm = ["ollama>=0.3"]
+dev = ["ruff>=0.5", "mypy>=1.11", "pytest>=8.2", "pytest-asyncio>=0.23"]
 
 [project.scripts]
-start_server_radxa = "app.main:main"
+weavelens-api = "weavelens.api.main:run"
+weavelens-bot = "weavelens.bot.tg_bot:run"
+weavelens-index = "weavelens.pipeline.index:cli"
 
 [dependency-groups]
 dev = [

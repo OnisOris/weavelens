@@ -1,10 +1,9 @@
-# scripts/weaviate_script.py  (v4)
 import uuid
 import weaviate
 from weaviate.classes.config import Property, DataType, Configure
 from weaviate.classes.query import MetadataQuery
 
-client = weaviate.connect_to_local()  # подключение к локальному докеру
+client = weaviate.connect_to_local()  # локальный докер
 try:
     # Чистим, если коллекция уже есть
     for c in client.collections.list_all():
@@ -12,7 +11,7 @@ try:
             client.collections.delete("Doc")
             break
 
-    # Создаём коллекцию с "своими" векторами
+    # Создаём коллекцию с self-provided векторами
     client.collections.create(
         name="Doc",
         properties=[
@@ -20,10 +19,9 @@ try:
             Property(name="source", data_type=DataType.TEXT),
             Property(name="tags", data_type=DataType.TEXT_ARRAY),
         ],
-        vector_config=Configure.Vectors.self_provided(),  # "none" в терминах v3
+        vector_config=Configure.Vectors.self_provided(),
     )
 
-    # Вставка объекта с явным вектором
     vec = [0.01] * 384
     doc = client.collections.get("Doc")
     uid = str(uuid.uuid4())
@@ -33,7 +31,6 @@ try:
         uuid=uid,
     )
 
-    # Поиск по вектору
     res = doc.query.near_vector(
         near_vector=vec,
         limit=3,

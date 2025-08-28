@@ -1,10 +1,49 @@
+version: "3.9"
+
 services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    env_file: ["../.env"]
+    volumes:
+      - ../data:/app/data
+      - ../models:/app/models
+    ports: ["8000:8000"]
+    depends_on:
+      - weaviate
+    profiles: ["server"]
+
+  api-embedded:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    env_file: ["../.env"]
+    environment:
+      - WEAVELENS_PROFILE=embedded
+    volumes:
+      - ../data:/app/data
+      - ../models:/app/models
+    ports: ["8000:8000"]
+    profiles: ["embedded"]
+
+  bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile.bot
+    env_file: ["../.env"]
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      - api
+    profiles: ["server", "embedded"]
+
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:latest
     restart: unless-stopped
     ports:
       - "8080:8080"      # REST
-      - "50051:50051"    # gRPC  ✅
+      - "50051:50051"    # gRPC
     environment:
       CLUSTER_HOSTNAME: "node1"
       DEFAULT_VECTORIZER_MODULE: "none"
@@ -14,13 +53,12 @@ services:
       ENABLE_MODULES: "bm25"
       DISABLE_TELEMETRY: "true"
     volumes:
-      - ./weaviate_data:/var/lib/weaviate
-    networks:
-      - weavelens_net
+      - ../data/weaviate:/var/lib/weaviate
+    profiles: ["server"]
 
-networks:
-  weavelens_net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.29.0.0/16
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ../models:/root/.ollama
+    ports: ["11434:11434"]
+    profiles: ["server", "embedded"]

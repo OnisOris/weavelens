@@ -1,25 +1,20 @@
-# weavelens
+# WeaveLens — локальный RAG на Weaviate v4
 
-Установка:
-```
-uv pip install .
-```
+Функционал:
+- Сбор локальных документов (`data/inbox`, `data/sources`), парсинг PDF/DOCX/MD/TXT.
+- Чанкование, эмбеддинги (Sentence-Transformers), хранение в Weaviate (server или embedded).
+- Поиск/RAG (FastAPI `/search`, `/ask`), приватный `/metrics` Prometheus.
+- TG‑бот на aiogram: `/search`, `/ask`, `/scan`.
+- Опции: офлайн‑режим, шифрование содержимого, JWT для API.
 
-Поднимаем weaviate:
-```
-cd deployment
-docker compose down -v
-docker compose up -d
-docker ps
-```
+## Быстрый старт
 
-Проверяем работу
-```
-curl http://localhost:8080/v1/meta
+```bash
+cp .env.example .env
+docker compose -f deployment/docker-compose.yml --profile server up -d --build
+# положите файлы в ./data/inbox и вызовите:
+curl -X POST http://localhost:8000/api/ingest/scan
 ```
 
-Запускаем скрипт проверки векторной бд:
-
-```
-uv run ./scripts/weaviate_script.py
-```
+## Профиль embedded
+Запуск без контейнера Weaviate возможен при установке `weaviate-embedded` в Python и `WEAVELENS_PROFILE=embedded`.
