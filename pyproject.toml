@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "weavelens"
 dynamic = ["version"]
@@ -5,7 +9,7 @@ description = "This module is needed to control your documents"
 requires-python = ">=3.10"
 authors = [
     {name = "Michael", email = "onisoris@yandex.ru"},
-    {name = "Osia", email = "osia@osia.ru"},
+    {name = "Egor", email = "egor.goncharov.oisa@mail.ru"},
 ]
 maintainers = [
     {name = "Michael", email = "onisoris@yandex.ru"}
@@ -26,6 +30,7 @@ license = "MIT"
 license-files = ["LICENSE*"]
 readme = {file = "README.md", content-type = "text/markdown"}
 
+
 [project.urls]
 Homepage = "https://github.com/OnisOris/pion"
 Documentation = "https://onisoris.github.io/pion"
@@ -34,3 +39,10 @@ Issues = "https://github.com/OnisOris/pion/issues"
 
 [project.scripts]
 start_server_radxa = "app.main:main"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.1",
+    "ruff>=0.12.11",
+]
