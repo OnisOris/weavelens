@@ -22,15 +22,15 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13"
 ]
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE*"]
 readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.urls]
-Homepage = "https://github.com/OnisOris/pion"
-Documentation = "https://onisoris.github.io/pion"
-Repository = "https://github.com/OnisOris/pion.git"
-Issues = "https://github.com/OnisOris/pion/issues"
+Homepage = "https://github.com/OnisOris/weavelens"
+Documentation = "https://onisoris.github.io/weavelens"
+Repository = "https://github.com/OnisOris/weavelens.git"
+Issues = "https://github.com/OnisOris/weavelens/issues"
 
 [project.scripts]
 start_server_radxa = "app.main:main"
