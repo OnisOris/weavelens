@@ -15,6 +15,8 @@ maintainers = [
     {name = "Michael", email = "onisoris@yandex.ru"}
 ]
 dependencies = [
+    "aiogram>=3.22.0",
+    "loguru>=0.7.3",
     "weaviate-client>=4.16.9",
 ]
 classifiers = [
@@ -39,6 +41,7 @@ Issues = "https://github.com/OnisOris/weavelens/issues"
 
 [project.scripts]
 start_server_radxa = "app.main:main"
+weavelens-bot = "weavelens.bot.tg_bot:main"
 
 [dependency-groups]
 dev = [
