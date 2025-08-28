@@ -46,3 +46,12 @@ dev = [
     "pytest>=8.4.1",
     "ruff>=0.12.11",
 ]
+
+[tool.ruff]
+line-length = 100
+select = [
+"E",
+"F",
+"I",
+"UP"
+]
