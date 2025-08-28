@@ -1,0 +1,20 @@
+repos:
+  - repo: 'https://github.com/pre-commit/pre-commit-hooks'
+    rev: 'v2.3.0'
+    hooks:
+      - id: 'check-yaml'
+      - id: 'end-of-file-fixer'
+      - id: 'trailing-whitespace'
+      - id: 'check-toml'
+      - id: 'check-yaml'
+      - id: 'trailing-whitespace'
+  - repo: 'https://github.com/astral-sh/ruff-pre-commitre'
+    rev: 'v0.12.11'
+    hooks:
+      - id: 'ruff-check'
+      - id: 'ruff-format'
+  - repo: 'https://github.com/gitleaks/gitleaks'
+    rev: 'v8.24.2'
+    hooks:
+      - id: 'gitleaks'
+
