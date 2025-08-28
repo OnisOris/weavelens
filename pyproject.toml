@@ -16,6 +16,7 @@ maintainers = [
 ]
 dependencies = [
     "aiogram>=3.22.0",
+    "dotenv>=0.9.9",
     "loguru>=0.7.3",
     "weaviate-client>=4.16.9",
 ]
