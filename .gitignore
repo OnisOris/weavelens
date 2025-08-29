@@ -207,3 +207,19 @@ marimo/_lsp/
 __marimo__/
 
 deployment/weaviate_data/
+data/
+!data/.gitkeep
+data/weaviate/
+deployment/weaviate_data/
+models/
+!models/.gitkeep
+.huggingface/
+HF_HOME/
+models/id_ed25519
+models/id_ed25519.pub
+*.zip
+*.tar
+*.tar.gz
+demo.txt
+.DS_Store
+.vscode/

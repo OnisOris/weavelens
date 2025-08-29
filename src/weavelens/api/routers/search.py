@@ -1,27 +1,28 @@
 from __future__ import annotations
+from pydantic import BaseModel, Field
 from fastapi import APIRouter
-from pydantic import BaseModel
-from ...pipeline.query import retrieve, build_context
-from ...models.llm import ask_ollama
+from typing import List
+from ...pipeline.query import retrieve
+from ...llm.ollama_client import generate_answer
 
 router = APIRouter()
 
-class Q(BaseModel):
-    q: str
-    k: int = 8
+class SearchQuery(BaseModel):
+    q: str = Field(..., description="Query text")
+    k: int = Field(5, description="Top-K hits")
 
 @router.post("/search")
-def search(q: Q):
+def search(q: SearchQuery):
     hits = retrieve(q.q, q.k)
     return {"hits": hits}
 
 @router.post("/ask")
-async def ask(q: Q):
+def ask(q: SearchQuery):
     hits = retrieve(q.q, q.k)
-    ctx = build_context(hits)
-    prompt = f"Ответь строго по контексту. Если ответа нет — скажи, что ответа в документах нет.\n\nВопрос: {q.q}\n\nКонтекст:\n{ctx}"
+    chunks = [h.get("text","") for h in hits]
     try:
-        ans = await ask_ollama(prompt)
+        text = generate_answer(q.q, chunks)
+        return {"answer": {"text": text, "used_chunks": len(chunks)}, "hits": hits}
     except Exception:
-        ans = "[LLM недоступна — вернул релевантные фрагменты]"
-    return {"answer": {"text": ans, "used_chunks": len(hits)}, "hits": hits}
+        # graceful fallback
+        return {"answer": {"text": "[LLM недоступна — вернул релевантные фрагменты]", "used_chunks": len(chunks)}, "hits": hits}

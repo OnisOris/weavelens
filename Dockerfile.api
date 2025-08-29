@@ -1,9 +1,16 @@
 FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+
+# порядок ВАЖЕН: сначала манифесты + src, потом install
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir .
 COPY src ./src
-COPY data ./data
-CMD ["python", "-m", "weavelens.api.main"]
+RUN pip install --no-cache-dir .
+
+# на всякий случай пробрасываем src (работает даже без install)
+ENV PYTHONPATH=/app/src
+
+EXPOSE 8000
+CMD ["weavelens-api"]

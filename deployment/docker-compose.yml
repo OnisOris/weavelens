@@ -1,43 +1,4 @@
-version: "3.9"
-
 services:
-  api:
-    build:
-      context: ..
-      dockerfile: Dockerfile.api
-    env_file: ["../.env"]
-    volumes:
-      - ../data:/app/data
-      - ../models:/app/models
-    ports: ["8000:8000"]
-    depends_on:
-      - weaviate
-    profiles: ["server"]
-
-  api-embedded:
-    build:
-      context: ..
-      dockerfile: Dockerfile.api
-    env_file: ["../.env"]
-    environment:
-      - WEAVELENS_PROFILE=embedded
-    volumes:
-      - ../data:/app/data
-      - ../models:/app/models
-    ports: ["8000:8000"]
-    profiles: ["embedded"]
-
-  bot:
-    build:
-      context: ..
-      dockerfile: Dockerfile.bot
-    env_file: ["../.env"]
-    volumes:
-      - ../data:/app/data
-    depends_on:
-      - api
-    profiles: ["server", "embedded"]
-
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:latest
     restart: unless-stopped
@@ -54,11 +15,68 @@ services:
       DISABLE_TELEMETRY: "true"
     volumes:
       - ../data/weaviate:/var/lib/weaviate
-    profiles: ["server"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
 
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
+    ports: ["11434:11434"]
     volumes:
       - ../models:/root/.ollama
-    ports: ["11434:11434"]
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    env_file: ["../.env"]
+    environment:
+      - WEAVIATE_HOST=weaviate           # override localhost for in-cluster DNS
+      - OLLAMA_HOST=ollama               # override localhost for in-cluster DNS
+      - WEAVELENS_PROFILE=server
+    volumes:
+      - ../data:/app/data
+      - ../models:/app/models
+    ports: ["8000:8000"]
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/api/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+    profiles: ["server"]
+
+  api-embedded:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    env_file: ["../.env"]
+    environment:
+      - WEAVELENS_PROFILE=embedded
+    volumes:
+      - ../data:/app/data
+      - ../models:/app/models
+    ports: ["8000:8000"]
+    restart: unless-stopped
+    profiles: ["embedded"]
+
+  bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile.bot
+    env_file: ["../.env"]
+    environment:
+      - BOT_API_URL=http://api:8000/api   # service DNS name inside compose network
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
     profiles: ["server", "embedded"]

@@ -1,18 +1,17 @@
 from __future__ import annotations
-from pydantic import BaseModel
 import os
+from pydantic import BaseModel
 
 class Settings(BaseModel):
+    # modes
     offline: bool = os.getenv("WEAVELENS_OFFLINE", "true").lower() == "true"
     profile: str = os.getenv("WEAVELENS_PROFILE", "server")
 
-    # weaviate server
+    # weaviate
     weaviate_host: str = os.getenv("WEAVIATE_HOST", "localhost")
     weaviate_port: int = int(os.getenv("WEAVIATE_PORT", "8080"))
     weaviate_scheme: str = os.getenv("WEAVIATE_SCHEME", "http")
     weaviate_api_key: str | None = os.getenv("WEAVIATE_API_KEY") or None
-
-    # embedded
     weaviate_embedded_path: str = os.getenv("WEAVIATE_EMBEDDED_DATA_PATH", "/app/data/weaviate")
 
     # embeddings
@@ -20,10 +19,12 @@ class Settings(BaseModel):
     emb_device: str = os.getenv("EMB_DEVICE", "cpu")
     emb_max_seq: int = int(os.getenv("EMB_MAX_SEQ", "1024"))
 
-    # llm
-    ollama_host: str = os.getenv("OLLAMA_HOST", "localhost")
+    # llm / ollama
+    # IMPORTANT: inside docker, the host should be the docker service name 'ollama'
+    # not 'localhost'. We default to 'ollama' to work out of the box.
+    ollama_host: str = os.getenv("OLLAMA_HOST", "ollama")
     ollama_port: int = int(os.getenv("OLLAMA_PORT", "11434"))
-    llm_model: str = os.getenv("LLM_MODEL", "qwen2.5:7b-instruct-q4_K_M")
+    llm_model: str = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct-q4_0")
 
     # api
     api_host: str = os.getenv("API_HOST", "0.0.0.0")

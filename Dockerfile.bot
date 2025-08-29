@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir .
 COPY src ./src
+RUN pip install --no-cache-dir .
+
+ENV PYTHONPATH=/app/src
 ENV BOT_API_URL=http://api:8000/api
-CMD ["python", "-m", "weavelens.bot.tg_bot"]
+CMD ["weavelens-bot"]
