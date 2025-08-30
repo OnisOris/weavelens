@@ -1,89 +1,161 @@
-# Telegram bot for WeaveLens
-from __future__ import annotations
+# coding: utf-8
+"""
+WeaveLens Telegram Bot (aiogram v3)
+Автодетект базового адреса API (с/без /api) и фолбэк при 404.
 
+Команды:
+/help, /start — помощь
+/id            — показать ваш Telegram ID
+/scan          — пересканировать входящую папку и проиндексировать
+/search <q>    — поиск по базе
+/ask <q>       — вопрос LLM с опорой на базу
+"""
 import asyncio
 import logging
-import sys
-from typing import Any, Iterable
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from aiogram import Bot, Dispatcher
-from aiogram.enums import ChatAction
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from weavelens.settings import Settings
+from ..settings import Settings
 
-s = Settings()
-ALLOWLIST: set[int] = set(s.tg_allowlist or [])
-API_BASE = (s.bot_api_url or "http://localhost:8000/api").rstrip("/")
+# ------------------------ ЛОГИРОВАНИЕ ------------------------
+logger = logging.getLogger("weavelens.bot")
+if not logger.handlers:
+    logging.basicConfig(
+        level=os.getenv("BOT_LOG_LEVEL", "INFO"),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
 
-HTTP_DEFAULT_TIMEOUT = httpx.Timeout(30.0)
-HTTP_LONG_TIMEOUT = httpx.Timeout(120.0)
+# ------------------------ НАСТРОЙКИ --------------------------
+s = Settings()  # читает .env/окружение
 
-LOG = logging.getLogger("weavelens.bot")
+# Текущая рабочая база API (определяется на старте)
+_API_BASE: str = ""
+
+
+def _normalize_base(v: str) -> str:
+    return (v or "").strip().rstrip("/")
+
+
+def _alt_base(v: str) -> str:
+    """Переключить базу с '/api' <-> без '/api'."""
+    v = _normalize_base(v)
+    return v[:-4] if v.endswith("/api") else (v + "/api")
+
+
+async def _probe_base(base: str) -> bool:
+    """Проверяем, что {base}/live отдаёт 200."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get(f"{base}/live")
+            if r.status_code == 200:
+                return True
+    except Exception:
+        return False
+    return False
+
+
+async def _autodetect_api_base() -> str:
+    """
+    Пробуем ряд кандидатов, пока не найдём базу, где /live отвечает 200.
+    Порядок: env, env toggled, http://api:8000/api, http://api:8000, их toggled.
+    """
+    env_base = _normalize_base(s.bot_api_url or "http://api:8000/api")
+    candidates: List[str] = [
+        env_base,
+        _alt_base(env_base),
+        "http://api:8000/api",
+        "http://api:8000",
+    ]
+
+    # Убираем дубли сохраняя порядок
+    seen = set()
+    uniq: List[str] = []
+    for b in candidates:
+        b = _normalize_base(b)
+        if b and b not in seen:
+            uniq.append(b)
+            seen.add(b)
+
+    for base in uniq:
+        if await _probe_base(base):
+            logger.info("API base detected: %s", base)
+            return base
+
+    # Ничего не нашли — возвращаем env_base как последнее средство
+    logger.warning("API base autodetect failed, fallback to %s", env_base)
+    return env_base
 
 
 def api_url(path: str) -> str:
-    return f"{API_BASE}/{path.lstrip('/')}"
+    path = path if path.startswith("/") else f"/{path}"
+    return f"{_API_BASE}{path}"
 
 
-def _truncate(text: str, limit: int = 3500) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+def _is_allowed(user_id: Optional[int]) -> bool:
+    """Allowlist: пустой список — разрешить всем."""
+    if user_id is None:
+        return False
+    allow = list(set(s.tg_allowlist or []))
+    return True if not allow else user_id in allow
 
 
-async def _send_typing(m: Message) -> None:
+def _ellipsize(text: str, limit: int = 500) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def _format_hit(hit: Dict[str, Any]) -> str:
+    """Форматируем один результат поиска (с путём к файлу, если есть)."""
+    txt = hit.get("text", "")
+    src = hit.get("source_path") or hit.get("file_path") or hit.get("path")
+    line = f"• {_ellipsize(txt)}"
+    if src:
+        line += f"\nИсточник: {src}"
+    return line
+
+
+def _format_hits(hits: List[Dict[str, Any]]) -> str:
+    return "Ничего не нашлось." if not hits else "\n\n".join(_format_hit(h) for h in hits)
+
+
+async def _post_json_with_fallback(path: str, payload: Dict[str, Any], *, timeout: float = 120.0) -> Tuple[Dict[str, Any], str]:
+    """
+    POST на текущую базу. Если 404 — один раз пробуем альтернативную базу (toggled).
+    Возвращает (json, используемая_база).
+    """
+    global _API_BASE
+    url = api_url(path)
     try:
-        await m.bot.send_chat_action(m.chat.id, ChatAction.TYPING)
+        async with httpx.AsyncClient(timeout=timeout) as c:
+            r = await c.post(url, json=payload)
+            r.raise_for_status()
+            return r.json(), _API_BASE
+    except httpx.HTTPStatusError as e:
+        # Если 404 — пробуем альтернативную базу
+        if e.response is not None and e.response.status_code == 404:
+            alt = _alt_base(_API_BASE)
+            if alt != _API_BASE:
+                try:
+                    async with httpx.AsyncClient(timeout=timeout) as c:
+                        r2 = await c.post(f"{alt}{path if path.startswith('/') else '/' + path}", json=payload)
+                        r2.raise_for_status()
+                        _API_BASE = alt
+                        logger.info("Switched API base to: %s (due to 404 on %s)", _API_BASE, url)
+                        return r2.json(), _API_BASE
+                except Exception:
+                    pass
+        raise  # пробрасываем дальше
     except Exception:
-        pass
+        raise
 
 
-async def _safe_reply(m: Message, text: str) -> None:
-    MAX = 4096
-    if not text:
-        await m.reply("Пустой ответ.")
-        return
-    parts: list[str] = []
-    cur = ""
-    for para in text.split("\n\n"):
-        if len(cur) + len(para) + 2 <= MAX:
-            cur = f"{cur}\n\n{para}" if cur else para
-        else:
-            if cur:
-                parts.append(cur)
-            while len(para) > MAX:
-                parts.append(para[: MAX - 1] + "…")
-                para = para[MAX - 1 :]
-            cur = para
-    if cur:
-        parts.append(cur)
-    for p in parts:
-        await m.reply(p)
-
-
-def _format_hits(hits: Iterable[dict[str, Any]], max_items: int = 8) -> str:
-    lines: list[str] = []
-    for i, h in enumerate(hits):
-        if i >= max_items:
-            break
-        t = str(h.get("text", "")).strip()
-        if not t:
-            continue
-        lines.append(f"• {_truncate(t, 500)}")
-    return "\n\n".join(lines)
-
-
-async def _guard(m: Message) -> bool:
-    u = m.from_user
-    ok = bool(u and u.id in ALLOWLIST)
-    if not ok:
-        uid = u.id if u else "?"
-        await m.reply(f"Доступ закрыт.\nВаш id: {uid}\nПопросите добавить его в TG_ALLOWLIST.")
-    return ok
-
-
-async def cmd_start(m: Message) -> None:
+# ------------------------- КОМАНДЫ ---------------------------
+async def cmd_help(m: Message):
     await m.reply(
         "Привет! Я бот WeaveLens.\n\n"
         "Доступные команды:\n"
@@ -95,112 +167,104 @@ async def cmd_start(m: Message) -> None:
     )
 
 
-async def cmd_help(m: Message) -> None:
-    await cmd_start(m)
+async def cmd_id(m: Message):
+    await m.reply(f"Ваш Telegram ID: {m.from_user.id if m.from_user else 'неизвестно'}")
 
 
-async def cmd_id(m: Message) -> None:
-    uid = m.from_user.id if m.from_user else "?"
-    await m.reply(f"Ваш Telegram ID: {uid}")
-
-
-async def cmd_search(m: Message) -> None:
-    if not await _guard(m):
-        return
-    parts = (m.text or "").split(maxsplit=1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("Использование: /search <запрос>")
-        return
-    await _send_typing(m)
+async def cmd_scan(m: Message):
+    if not _is_allowed(m.from_user.id if m.from_user else None):
+        return await m.reply("Доступ закрыт.")
     try:
-        async with httpx.AsyncClient(timeout=HTTP_DEFAULT_TIMEOUT) as c:
-            r = await c.post(api_url("/search"), json={"q": parts[1].strip(), "k": 8})
-            r.raise_for_status()
-            data = r.json()
-    except httpx.HTTPError as e:
-        LOG.exception("search failed")
-        await m.reply(f"Ошибка запроса поиска: {e}")
-        return
-    text = _format_hits(data.get("hits", []), max_items=8)
-    await _safe_reply(m, text or "Ничего не нашлось.")
-
-
-async def cmd_ask(m: Message) -> None:
-    if not await _guard(m):
-        return
-    parts = (m.text or "").split(maxsplit=1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("Использование: /ask <вопрос>")
-        return
-    await _send_typing(m)
-    try:
-        async with httpx.AsyncClient(timeout=HTTP_LONG_TIMEOUT) as c:
-            r = await c.post(api_url("/ask"), json={"q": parts[1].strip(), "k": 6})
-            r.raise_for_status()
-            data = r.json()
-    except httpx.HTTPError as e:
-        LOG.exception("ask failed")
-        await m.reply(f"Ошибка запроса /ask: {e}")
-        return
-    answer = (data.get("answer") or {}).get("text") or "[нет ответа]"
-    await _safe_reply(m, _truncate(answer, 4000))
-
-
-async def cmd_scan(m: Message) -> None:
-    if not await _guard(m):
-        return
-    await _send_typing(m)
-    try:
-        async with httpx.AsyncClient(timeout=HTTP_LONG_TIMEOUT) as c:
-            r = await c.post(api_url("/ingest/scan"))
-            r.raise_for_status()
-            data = r.json()
-    except httpx.HTTPError as e:
-        LOG.exception("scan failed")
-        await m.reply(f"Ошибка индексации: {e}")
-        return
-    files = data.get("files")
-    chunks = data.get("chunks_indexed")
-    await m.reply(f"Файлов: {files}, проиндексировано чанков: {chunks}")
-
-
-async def cmd_ready(m: Message) -> None:
-    await _send_typing(m)
-    try:
-        async with httpx.AsyncClient(timeout=HTTP_DEFAULT_TIMEOUT) as c:
-            r = await c.get(api_url("/ready"))
-            ok = r.status_code == 200
-            data = {}
-            if r.headers.get("content-type", "").startswith("application/json"):
-                data = r.json()
-            await m.reply(f"API ready: {ok}\n{data}")
+        data, used_base = await _post_json_with_fallback("/ingest/scan", {}, timeout=180.0)
+        files = data.get("files")
+        chunks = data.get("chunks_indexed")
+        await m.reply(f"Файлов: {files}, проиндексировано чанков: {chunks}\n(API: {used_base})")
+    except httpx.HTTPStatusError as e:
+        logger.exception("scan failed (HTTP %s)", e.response.status_code if e.response else "?")
+        await m.reply(f"Ошибка запроса /scan: {e}")
     except Exception as e:
-        await m.reply(f"Ошибка запроса /ready: {e}")
+        logger.exception("scan failed")
+        await m.reply(f"Ошибка запроса /scan: {e}")
 
 
-async def run_async() -> None:
+async def cmd_search(m: Message):
+    if not _is_allowed(m.from_user.id if m.from_user else None):
+        return await m.reply("Доступ закрыт.")
+    parts = (m.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        return await m.reply("/search <запрос>")
+
+    q = parts[1].strip()
+    try:
+        data, used_base = await _post_json_with_fallback("/search", {"q": q, "k": 8}, timeout=60.0)
+        hits = data.get("hits", [])
+        text = _format_hits(hits)
+        await m.reply(text + f"\n\n(API: {used_base})")
+    except httpx.HTTPStatusError as e:
+        logger.exception("search failed (HTTP %s)", e.response.status_code if e.response else "?")
+        await m.reply(f"Ошибка запроса поиска: {e}")
+    except Exception as e:
+        logger.exception("search failed")
+        await m.reply(f"Ошибка запроса поиска: {e}")
+
+
+async def cmd_ask(m: Message):
+    if not _is_allowed(m.from_user.id if m.from_user else None):
+        return await m.reply("Доступ закрыт.")
+    parts = (m.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        return await m.reply("/ask <вопрос>")
+
+    q = parts[1].strip()
+    try:
+        data, used_base = await _post_json_with_fallback("/ask", {"q": q, "k": 6}, timeout=180.0)
+        answer = (data.get("answer") or {}).get("text") or ""
+        if answer and not answer.strip().startswith("[LLM недоступна"):
+            return await m.reply(answer.strip() + f"\n\n(API: {used_base})")
+
+        # fallback — показать релевантные фрагменты
+        hits = data.get("hits", [])[:3]
+        if hits:
+            text = "[LLM недоступна — вернул релевантные фрагменты]\n\n" + _format_hits(hits)
+        else:
+            text = "[LLM недоступна — релевантных фрагментов нет]"
+        await m.reply(text + f"\n\n(API: {used_base})")
+    except httpx.HTTPStatusError as e:
+        logger.exception("ask failed (HTTP %s)", e.response.status_code if e.response else "?")
+        await m.reply(f"Ошибка запроса /ask: {e}")
+    except Exception as e:
+        logger.exception("ask failed")
+        await m.reply(f"Ошибка запроса /ask: {e}")
+
+
+# ---------------------- ЗАПУСК ПРИЛОЖЕНИЯ --------------------
+async def run_async():
+    global _API_BASE
+
+    token = s.tg_token or os.getenv("TG_BOT_TOKEN")
+    if not token:
+        logger.error("TG_BOT_TOKEN не задан — бот не может запуститься.")
+        raise SystemExit(2)
+
+    # Определяем рабочую базу API
+    _API_BASE = await _autodetect_api_base()
+    logger.info("Bot starting. API at %s", _API_BASE)
+
     dp = Dispatcher()
-    dp.message.register(cmd_start, Command("start"))
     dp.message.register(cmd_help, Command("help"))
-    dp.message.register(cmd_id, Command("id"))
-    dp.message.register(cmd_search, Command("search"))
-    dp.message.register(cmd_ask, Command("ask"))
+    dp.message.register(cmd_help, Command("start"))
+    dp.message.register(cmd_id,   Command("id"))
     dp.message.register(cmd_scan, Command("scan"))
-    dp.message.register(cmd_ready, Command("ready"))
-    bot = Bot(s.tg_token)
-    LOG.info("Bot starting. API at %s", API_BASE)
-    try:
-        await dp.start_polling(bot, allowed_updates=None)
-    finally:
-        await bot.session.close()
+    dp.message.register(cmd_search, Command("search"))
+    dp.message.register(cmd_ask,    Command("ask"))
+
+    bot = Bot(token)
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
-def run() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-    if not s.tg_token:
-        LOG.error("TG_BOT_TOKEN не задан. Укажи переменную окружения TG_BOT_TOKEN.")
-        sys.exit(2)
-    try:
-        asyncio.run(run_async())
-    except KeyboardInterrupt:
-        LOG.info("Bot stopped by user.")
+def run():
+    asyncio.run(run_async())
+
+
+if __name__ == "__main__":
+    run()
