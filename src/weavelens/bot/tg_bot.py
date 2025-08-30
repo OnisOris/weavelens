@@ -1,4 +1,4 @@
-# coding: utf-8
+# src/weavelens/bot/tg_bot.py
 """
 WeaveLens Telegram Bot (aiogram v3)
 Автодетект базового адреса API (с/без /api) и фолбэк при 404.
@@ -13,6 +13,7 @@ WeaveLens Telegram Bot (aiogram v3)
 import asyncio
 import logging
 import os
+from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -35,6 +36,13 @@ s = Settings()  # читает .env/окружение
 
 # Текущая рабочая база API (определяется на старте)
 _API_BASE: str = ""
+
+# Telegram лимиты
+TELEGRAM_MAX_CHARS = 4096
+# безопасный размер чанка (оставляем запас под хвосты и служебные приписки)
+TELEGRAM_SAFE_CHARS = int(os.getenv("BOT_TG_SAFE_CHARS", "3500"))
+# если текст совсем длинный — отправляем как файл
+TO_FILE_THRESHOLD = TELEGRAM_SAFE_CHARS * 6
 
 
 def _normalize_base(v: str) -> str:
@@ -62,7 +70,7 @@ async def _probe_base(base: str) -> bool:
 async def _autodetect_api_base() -> str:
     """
     Пробуем ряд кандидатов, пока не найдём базу, где /live отвечает 200.
-    Порядок: env, env toggled, http://api:8000/api, http://api:8000, их toggled.
+    Порядок: env, env toggled, http://api:8000/api, http://api:8000.
     """
     env_base = _normalize_base(s.bot_api_url or "http://api:8000/api")
     candidates: List[str] = [
@@ -154,6 +162,39 @@ async def _post_json_with_fallback(path: str, payload: Dict[str, Any], *, timeou
         raise
 
 
+# --------------------- ХЕЛПЕРЫ ОТПРАВКИ ----------------------
+async def _reply_long(m: Message, text: str, footer: str = ""):
+    """
+    Отправляет длинный текст безопасно:
+    - если слишком большой — как файл
+    - иначе — порциями по TELEGRAM_SAFE_CHARS
+    """
+    footer = footer or ""
+    full_text = (text or "") + footer
+
+    # очень длинный ответ — отправляем как файл
+    if len(full_text) > TO_FILE_THRESHOLD:
+        buf = BytesIO(full_text.encode("utf-8"))
+        buf.name = "result.txt"
+        await m.reply_document(document=buf, caption="Результат во вложении")
+        return
+
+    # умещается в одно сообщение
+    if len(full_text) <= TELEGRAM_MAX_CHARS:
+        await m.reply(full_text)
+        return
+
+    # иначе порционно
+    chunks = [full_text[i : i + TELEGRAM_SAFE_CHARS] for i in range(0, len(full_text), TELEGRAM_SAFE_CHARS)]
+    total = len(chunks)
+    for i, chunk in enumerate(chunks, 1):
+        tail = f"\n\n[{i}/{total}]"
+        # на всякий случай, чтобы не превысить лимит с хвостом
+        if len(chunk) + len(tail) > TELEGRAM_MAX_CHARS:
+            chunk = chunk[: TELEGRAM_MAX_CHARS - len(tail) - 1]
+        await m.reply(chunk + tail)
+
+
 # ------------------------- КОМАНДЫ ---------------------------
 async def cmd_help(m: Message):
     await m.reply(
@@ -199,7 +240,7 @@ async def cmd_search(m: Message):
         data, used_base = await _post_json_with_fallback("/search", {"q": q, "k": 8}, timeout=60.0)
         hits = data.get("hits", [])
         text = _format_hits(hits)
-        await m.reply(text + f"\n\n(API: {used_base})")
+        await _reply_long(m, text, footer=f"\n\n(API: {used_base})")
     except httpx.HTTPStatusError as e:
         logger.exception("search failed (HTTP %s)", e.response.status_code if e.response else "?")
         await m.reply(f"Ошибка запроса поиска: {e}")
@@ -220,7 +261,7 @@ async def cmd_ask(m: Message):
         data, used_base = await _post_json_with_fallback("/ask", {"q": q, "k": 6}, timeout=180.0)
         answer = (data.get("answer") or {}).get("text") or ""
         if answer and not answer.strip().startswith("[LLM недоступна"):
-            return await m.reply(answer.strip() + f"\n\n(API: {used_base})")
+            return await _reply_long(m, answer.strip(), footer=f"\n\n(API: {used_base})")
 
         # fallback — показать релевантные фрагменты
         hits = data.get("hits", [])[:3]
@@ -228,7 +269,7 @@ async def cmd_ask(m: Message):
             text = "[LLM недоступна — вернул релевантные фрагменты]\n\n" + _format_hits(hits)
         else:
             text = "[LLM недоступна — релевантных фрагментов нет]"
-        await m.reply(text + f"\n\n(API: {used_base})")
+        await _reply_long(m, text, footer=f"\n\n(API: {used_base})")
     except httpx.HTTPStatusError as e:
         logger.exception("ask failed (HTTP %s)", e.response.status_code if e.response else "?")
         await m.reply(f"Ошибка запроса /ask: {e}")
