@@ -1,19 +1,11 @@
-# src/weavelens/bot/tg_bot.py
 """
 WeaveLens Telegram Bot (aiogram v3)
 Автодетект базового адреса API (с/без /api) и фолбэк при 404.
-
-Команды:
-/help, /start — помощь
-/id            — показать ваш Telegram ID
-/scan          — пересканировать входящую папку и проиндексировать
-/search <q>    — поиск по базе
-/ask <q>       — вопрос LLM с опорой на базу
+Добавлено: безопасная отправка длинных сообщений (чанкинг).
 """
 import asyncio
 import logging
 import os
-from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -37,12 +29,8 @@ s = Settings()  # читает .env/окружение
 # Текущая рабочая база API (определяется на старте)
 _API_BASE: str = ""
 
-# Telegram лимиты
-TELEGRAM_MAX_CHARS = 4096
-# безопасный размер чанка (оставляем запас под хвосты и служебные приписки)
-TELEGRAM_SAFE_CHARS = int(os.getenv("BOT_TG_SAFE_CHARS", "3500"))
-# если текст совсем длинный — отправляем как файл
-TO_FILE_THRESHOLD = TELEGRAM_SAFE_CHARS * 6
+# Телеграм ограничение, немного запасом
+_TG_MAX = 3800
 
 
 def _normalize_base(v: str) -> str:
@@ -116,6 +104,42 @@ def _ellipsize(text: str, limit: int = 500) -> str:
     text = (text or "").strip()
     return text if len(text) <= limit else text[:limit].rstrip() + "…"
 
+def _chunk_text(text: str, limit: int = _TG_MAX) -> List[str]:
+    """
+    Делим длинный текст на части <= limit, стараясь резать по абзацам/строкам.
+    """
+    if text is None:
+        return [""]
+    t = text.strip()
+    if len(t) <= limit:
+        return [t]
+
+    lines = t.splitlines()
+    blocks: List[str] = []
+    buf: List[str] = []
+    cur = 0
+    for ln in lines:
+        add = len(ln) + 1  # +\n
+        if cur + add > limit and buf:
+            blocks.append("\n".join(buf))
+            buf = [ln]
+            cur = len(ln) + 1
+        else:
+            buf.append(ln)
+            cur += add
+    if buf:
+        blocks.append("\n".join(buf))
+
+    # На всякий случай режем грубо, если вдруг блок > limit
+    out: List[str] = []
+    for b in blocks:
+        if len(b) <= limit:
+            out.append(b)
+        else:
+            for i in range(0, len(b), limit):
+                out.append(b[i:i+limit])
+    return out
+
 
 def _format_hit(hit: Dict[str, Any]) -> str:
     """Форматируем один результат поиска (с путём к файлу, если есть)."""
@@ -162,37 +186,10 @@ async def _post_json_with_fallback(path: str, payload: Dict[str, Any], *, timeou
         raise
 
 
-# --------------------- ХЕЛПЕРЫ ОТПРАВКИ ----------------------
-async def _reply_long(m: Message, text: str, footer: str = ""):
-    """
-    Отправляет длинный текст безопасно:
-    - если слишком большой — как файл
-    - иначе — порциями по TELEGRAM_SAFE_CHARS
-    """
-    footer = footer or ""
-    full_text = (text or "") + footer
-
-    # очень длинный ответ — отправляем как файл
-    if len(full_text) > TO_FILE_THRESHOLD:
-        buf = BytesIO(full_text.encode("utf-8"))
-        buf.name = "result.txt"
-        await m.reply_document(document=buf, caption="Результат во вложении")
-        return
-
-    # умещается в одно сообщение
-    if len(full_text) <= TELEGRAM_MAX_CHARS:
-        await m.reply(full_text)
-        return
-
-    # иначе порционно
-    chunks = [full_text[i : i + TELEGRAM_SAFE_CHARS] for i in range(0, len(full_text), TELEGRAM_SAFE_CHARS)]
-    total = len(chunks)
-    for i, chunk in enumerate(chunks, 1):
-        tail = f"\n\n[{i}/{total}]"
-        # на всякий случай, чтобы не превысить лимит с хвостом
-        if len(chunk) + len(tail) > TELEGRAM_MAX_CHARS:
-            chunk = chunk[: TELEGRAM_MAX_CHARS - len(tail) - 1]
-        await m.reply(chunk + tail)
+async def _reply_long(m: Message, text: str):
+    chunks = _chunk_text(text, _TG_MAX)
+    for part in chunks:
+        await m.reply(part)
 
 
 # ------------------------- КОМАНДЫ ---------------------------
@@ -219,13 +216,13 @@ async def cmd_scan(m: Message):
         data, used_base = await _post_json_with_fallback("/ingest/scan", {}, timeout=180.0)
         files = data.get("files")
         chunks = data.get("chunks_indexed")
-        await m.reply(f"Файлов: {files}, проиндексировано чанков: {chunks}\n(API: {used_base})")
+        await _reply_long(m, f"Файлов: {files}, проиндексировано чанков: {chunks}\n(API: {used_base})")
     except httpx.HTTPStatusError as e:
         logger.exception("scan failed (HTTP %s)", e.response.status_code if e.response else "?")
-        await m.reply(f"Ошибка запроса /scan: {e}")
+        await _reply_long(m, f"Ошибка запроса /scan: {e}")
     except Exception as e:
         logger.exception("scan failed")
-        await m.reply(f"Ошибка запроса /scan: {e}")
+        await _reply_long(m, f"Ошибка запроса /scan: {e}")
 
 
 async def cmd_search(m: Message):
@@ -239,14 +236,14 @@ async def cmd_search(m: Message):
     try:
         data, used_base = await _post_json_with_fallback("/search", {"q": q, "k": 8}, timeout=60.0)
         hits = data.get("hits", [])
-        text = _format_hits(hits)
-        await _reply_long(m, text, footer=f"\n\n(API: {used_base})")
+        text = _format_hits(hits) + f"\n\n(API: {used_base})"
+        await _reply_long(m, text)
     except httpx.HTTPStatusError as e:
         logger.exception("search failed (HTTP %s)", e.response.status_code if e.response else "?")
-        await m.reply(f"Ошибка запроса поиска: {e}")
+        await _reply_long(m, f"Ошибка запроса поиска: {e}")
     except Exception as e:
         logger.exception("search failed")
-        await m.reply(f"Ошибка запроса поиска: {e}")
+        await _reply_long(m, f"Ошибка запроса поиска: {e}")
 
 
 async def cmd_ask(m: Message):
@@ -261,7 +258,7 @@ async def cmd_ask(m: Message):
         data, used_base = await _post_json_with_fallback("/ask", {"q": q, "k": 6}, timeout=180.0)
         answer = (data.get("answer") or {}).get("text") or ""
         if answer and not answer.strip().startswith("[LLM недоступна"):
-            return await _reply_long(m, answer.strip(), footer=f"\n\n(API: {used_base})")
+            return await _reply_long(m, answer.strip() + f"\n\n(API: {used_base})")
 
         # fallback — показать релевантные фрагменты
         hits = data.get("hits", [])[:3]
@@ -269,13 +266,13 @@ async def cmd_ask(m: Message):
             text = "[LLM недоступна — вернул релевантные фрагменты]\n\n" + _format_hits(hits)
         else:
             text = "[LLM недоступна — релевантных фрагментов нет]"
-        await _reply_long(m, text, footer=f"\n\n(API: {used_base})")
+        await _reply_long(m, text + f"\n\n(API: {used_base})")
     except httpx.HTTPStatusError as e:
         logger.exception("ask failed (HTTP %s)", e.response.status_code if e.response else "?")
-        await m.reply(f"Ошибка запроса /ask: {e}")
+        await _reply_long(m, f"Ошибка запроса /ask: {e}")
     except Exception as e:
         logger.exception("ask failed")
-        await m.reply(f"Ошибка запроса /ask: {e}")
+        await _reply_long(m, f"Ошибка запроса /ask: {e}")
 
 
 # ---------------------- ЗАПУСК ПРИЛОЖЕНИЯ --------------------

@@ -23,6 +23,7 @@ urls = {Homepage = "https://github.com/OnisOris/weavelens"}
 
 dependencies = [
   "pydantic>=2",
+  "pydantic-settings>=2.2",
   "python-dotenv>=1.0",
   "pydantic-settings>=2.3",
   "httpx>=0.27",

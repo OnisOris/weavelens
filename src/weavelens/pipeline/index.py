@@ -1,7 +1,6 @@
-
 from __future__ import annotations
-import os, hashlib
-from typing import List, Tuple, Dict, Any
+import os, hashlib, argparse, sys
+from typing import List, Dict, Any
 from weavelens.settings import settings
 from weavelens.db import weaviate_client as wv
 from pypdf import PdfReader
@@ -48,11 +47,7 @@ def chunk_text(text: str, chunk_chars: int = 1200, overlap: int = 200) -> List[s
             i = 0
     return chunks
 
-def scan_and_index(paths: List[str]) -> Dict[str, Any]:
-    files_processed = 0
-    chunks_total = 0
-    skipped = 0
-
+def _iter_supported_files(paths: List[str]):
     seen = set()
     for p in paths:
         if not p:
@@ -69,8 +64,15 @@ def scan_and_index(paths: List[str]) -> Dict[str, Any]:
         else:
             if os.path.splitext(p)[1].lower() in SUPPORTED:
                 seen.add(p)
-
     for fp in sorted(seen):
+        yield fp
+
+def scan_and_index(paths: List[str]) -> Dict[str, Any]:
+    files_processed = 0
+    chunks_total = 0
+    skipped = 0
+
+    for fp in _iter_supported_files(paths):
         try:
             with open(fp, "rb") as f:
                 data = f.read()
@@ -100,3 +102,24 @@ def scan_and_index(paths: List[str]) -> Dict[str, Any]:
         "files": files_processed,
         "chunks": chunks_total,
     }
+
+def cli(argv: List[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="WeaveLens indexer")
+    parser.add_argument("paths", nargs="*", help="Files or directories to index")
+    args = parser.parse_args(argv)
+
+    paths = list(args.paths)
+    # default to settings.inbox_dir if no paths supplied
+    if not paths:
+        if settings.inbox_dir and os.path.exists(settings.inbox_dir):
+            paths = [settings.inbox_dir]
+        else:
+            print("Nothing to index: provide paths or set INBOX_DIR", file=sys.stderr)
+            return 2
+
+    res = scan_and_index(paths)
+    print(res)
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

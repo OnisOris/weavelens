@@ -1,7 +1,7 @@
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DEFAULT_TIMEOUT=120
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -10,9 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN python -m pip install --upgrade pip \
- && pip install --no-cache-dir ".[api]" ".[llm]"
+RUN pip install --no-cache-dir ".[api]" ".[llm]"
 
-ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
+
 CMD ["weavelens-api"]

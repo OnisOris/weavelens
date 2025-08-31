@@ -1,37 +1,30 @@
-
 from __future__ import annotations
-from typing import List, Optional, Dict, Any
+
 from fastapi import APIRouter
-from pydantic import BaseModel
 from weavelens.settings import settings
 from weavelens.pipeline.index import scan_and_index
 
 router = APIRouter()
 
-class ScanIn(BaseModel):
-    paths: Optional[List[str]] = None
 
 @router.post("/ingest/scan")
-async def ingest_scan(body: ScanIn):
-    scan_paths: List[str] = []
-    # always include INBOX_DIR
+async def ingest_scan():
+    """
+    Scan configured folders and (re)index supported documents.
+    Safe when no folders configured: returns zero stats instead of 500.
+    """
+    paths: list[str] = []
     if settings.inbox_dir:
-        scan_paths.append(settings.inbox_dir)
-    # add env extra dirs
+        paths.append(settings.inbox_dir)
     if settings.extra_scan_dirs:
-        for p in settings.extra_scan_dirs.split(","):
-            p = p.strip()
-            if p:
-                scan_paths.append(p)
-    # add request-provided
-    if body.paths:
-        scan_paths.extend(body.paths)
-    # dedupe
-    seen = []
-    sset = set()
-    for p in scan_paths:
-        if p not in sset:
-            seen.append(p)
-            sset.add(p)
-    stats = scan_and_index(seen)
-    return stats
+        paths.extend([p for p in settings.extra_scan_dirs if p])
+
+    if not paths:
+        return {
+            "indexed": {"files": 0, "chunks": 0, "skipped": 0},
+            "paths": [],
+            "note": "No INBOX_DIR / EXTRA_SCAN_DIRS configured; nothing to scan.",
+        }
+
+    stats = scan_and_index(paths)
+    return {"indexed": stats, "paths": paths}
