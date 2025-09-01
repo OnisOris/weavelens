@@ -1,0 +1,17 @@
+services:
+  api:
+    # Bind API to host port 18000 (was 8000) to avoid collisions.
+    # Inside the docker network it still listens on :8000, so the bot can reach it at http://api:8000
+    ports:
+      - "18000:8000"
+    environment:
+      # pydantic v2 requires JSON for list fields
+      EXTRA_SCAN_DIRS: '["/data/inbox"]'
+    volumes:
+      # Make host inbox visible to the API
+      - ../data/inbox:/data/inbox:ro
+
+  bot:
+    environment:
+      # Bot talks to API over the docker network by service name; unaffected by host port change
+      API_BASE: "http://api:8000/api"
