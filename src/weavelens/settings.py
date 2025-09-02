@@ -1,160 +1,149 @@
 from __future__ import annotations
 
-import os
-from typing import List, Optional, Any
-from urllib.parse import urlparse
+from functools import lru_cache
+from typing import List, Optional
 
-from pydantic import Field, AliasChoices
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _parse_int_list(val: Any) -> List[int]:
-    if val is None or val == "":
-        return []
-    if isinstance(val, list):
-        out: List[int] = []
-        for x in val:
-            if x is None or x == "":
-                continue
-            out.append(int(x))
-        return out
-    if isinstance(val, (int,)):
-        return [int(val)]
-    s = str(val).strip()
-    # JSON-like list
-    if s.startswith("[") and s.endswith("]"):
-        s = s[1:-1]
-    parts = [p for p in s.replace(";", ",").split(",")]
-    out: List[int] = []
-    for p in parts:
-        p = p.strip()
-        if not p:
-            continue
-        out.append(int(p))
-    return out
-
-
-def _parse_str_list(val: Any) -> List[str]:
-    if val is None or val == "":
-        return []
-    if isinstance(val, list):
-        return [str(x) for x in val if str(x).strip()]
-    s = str(val).strip()
-    if s.startswith("[") and s.endswith("]"):
-        s = s[1:-1]
-    parts = [p.strip() for p in s.replace(";", ",").split(",")]
-    return [p for p in parts if p]
-
-
 class Settings(BaseSettings):
-    """
-    Project settings with robust env parsing (Pydantic v2).
-    Compatible with API + bot containers.
-    """
+    # -------- Bot --------
+    tg_token: Optional[str] = Field(default=None, alias="TG_BOT_TOKEN")
+    tg_allowlist: List[int] = Field(default_factory=list, alias="TG_ALLOWLIST")
+    bot_api_url: Optional[str] = Field(default=None, alias="BOT_API_URL")
+
+    # -------- API --------
+    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
+    api_port: int = Field(default=8000, alias="API_PORT")
+    jwt_secret: Optional[str] = Field(default=None, alias="JWT_SECRET")
+    api_prefix: str = Field(default="/api", alias="API_PREFIX")
+
+    # -------- WeaveLens --------
+    weavelens_offline: bool = Field(default=False, alias="WEAVELENS_OFFLINE")
+    weavelens_profile: str = Field(default="server", alias="WEAVELENS_PROFILE")
+
+    # -------- Weaviate (server) --------
+    weaviate_host: str = Field(default="weaviate", alias="WEAVIATE_HOST")
+    weaviate_port: int = Field(default=8080, alias="WEAVIATE_PORT")
+    weaviate_grpc_port: int = Field(default=50051, alias="WEAVIATE_GRPC_PORT")
+    weaviate_scheme: str = Field(default="http", alias="WEAVIATE_SCHEME")
+    weaviate_api_key: Optional[str] = Field(default=None, alias="WEAVIATE_API_KEY")
+
+    # -------- Weaviate (embedded) --------
+    weaviate_embedded_data_path: str = Field(
+        default="/app/data/weaviate", alias="WEAVIATE_EMBEDDED_DATA_PATH"
+    )
+
+    # -------- Embeddings --------
+    emb_model_name: str = Field(default="BAAI/bge-m3", alias="EMB_MODEL_NAME")
+    emb_device: str = Field(default="cpu", alias="EMB_DEVICE")
+    emb_max_seq: int = Field(default=1024, alias="EMB_MAX_SEQ")
+
+    # -------- LLM / Ollama --------
+    ollama_host: str = Field(default="ollama", alias="OLLAMA_HOST")
+    ollama_port: int = Field(default=11434, alias="OLLAMA_PORT")
+    llm_accel: str = Field(default="cpu", alias="LLM_ACCEL")
+    ollama_model_cpu: str = Field(default="qwen2.5:3b-instruct-q4_0", alias="OLLAMA_MODEL_CPU")
+    ollama_model_gpu: str = Field(default="qwen2.5:7b-instruct-q4_0", alias="OLLAMA_MODEL_GPU")
+    ollama_num_gpu_layers: int = Field(default=0, alias="OLLAMA_NUM_GPU_LAYERS")
+
+    # -------- Paths --------
+    data_inbox: str = Field(
+        default="/app/data/inbox",
+        alias="DATA_INBOX",
+        validation_alias=AliasChoices("DATA_INBOX", "INBOX_DIR"),
+    )
+    data_sources: str = Field(
+        default="/app/data/sources",
+        alias="DATA_SOURCES",
+        validation_alias=AliasChoices("DATA_SOURCES", "SOURCES_DIR"),
+    )
+    data_processed: str = Field(
+        default="/app/data/processed",
+        alias="DATA_PROCESSED",
+        validation_alias=AliasChoices("DATA_PROCESSED", "OUT_DIR", "PROCESSED_DIR"),
+    )
+    models_cache: str = Field(
+        default="/app/models/cache",
+        alias="MODELS_CACHE",
+        validation_alias=AliasChoices("MODELS_CACHE", "HF_HOME", "TRANSFORMERS_CACHE"),
+    )
+
+    # -------- OCR / Extraction --------
+    ocr_enabled: bool = Field(default=True, alias="OCR_ENABLED")
+    ocr_langs: str = Field(default="rus+eng", alias="OCR_LANGS")
+    ocr_pdf_zoom: float = Field(default=2.0, alias="OCR_PDF_ZOOM")
+    ocr_min_page_text_len: int = Field(default=20, alias="OCR_MIN_PAGE_TEXT_LEN")
+
+    # -------- Security --------
+    encrypt_content: bool = Field(default=False, alias="ENCRYPT_CONTENT")
+    fernet_key: Optional[str] = Field(default=None, alias="FERNET_KEY")
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_prefix="",
+        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        populate_by_name=True,
     )
-
-    # --- API ---
-    api_prefix: str = Field(default="/api", validation_alias=AliasChoices("API_PREFIX"))
-
-    inbox_dir: Optional[str] = Field(default=None, validation_alias=AliasChoices("INBOX_DIR"))
-    extra_scan_dirs: List[str] = Field(
-        default_factory=list,
-        validation_alias=AliasChoices("EXTRA_SCAN_DIRS", "SCAN_DIRS"),
-    )
-
-    # --- Vector DB / Weaviate ---
-    weaviate_url: str = Field(
-        default="http://weaviate:8080",
-        validation_alias=AliasChoices("WEAVIATE_URL"),
-    )
-    weaviate_grpc_url: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("WEAVIATE_GRPC_URL"),
-    )
-
-    # --- LLM / Ollama ---
-    ollama_url: str = Field(
-        default="http://ollama:11434",
-        validation_alias=AliasChoices("OLLAMA_URL", "OLLAMA_BASE_URL"),
-    )
-    ollama_model: str = Field(
-        default="llama3.2:3b-instruct",
-        validation_alias=AliasChoices("OLLAMA_MODEL", "LLM_MODEL"),
-    )
-
-    # --- Bot ---
-    bot_api_url: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("BOT_API_URL", "BOT_API_BASE", "API_BASE"),
-    )
-    # keep both names for compatibility
-    bot_token: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("TG_BOT_TOKEN", "BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
-    )
-    tg_token: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("TG_BOT_TOKEN", "BOT_TOKEN", "TELEGRAM_BOT_TOKEN", "TG_TOKEN"),
-    )
-    tg_allowlist: List[int] = Field(
-        default_factory=list,
-        validation_alias=AliasChoices("TG_ALLOWLIST", "TELEGRAM_ALLOWLIST", "BOT_ALLOWLIST"),
-    )
-    tg_denied_msg: str = Field(default="Доступ запрещен", validation_alias=AliasChoices("TG_DENIED_MSG"))
-
-    @field_validator("api_prefix", mode="before")
-    @classmethod
-    def _fix_api_prefix(cls, v: Any) -> str:
-        if not v:
-            return "/api"
-        s = str(v).strip()
-        if not s.startswith("/"):
-            s = "/" + s
-        return s
 
     @field_validator("tg_allowlist", mode="before")
     @classmethod
-    def _fix_allowlist(cls, v: Any) -> List[int]:
-        return _parse_int_list(v)
+    def _parse_allowlist(cls, v):
+        """
+        TG_ALLOWLIST может быть:
+        - пусто
+        - '1,2,3'
+        - список ['1','2',...]
+        Приводим к List[int].
+        """
+        if v in (None, "", []):
+            return []
+        if isinstance(v, list):
+            return [int(x) for x in v]
+        return [int(x) for x in str(v).replace(";", ",").split(",") if str(x).strip()]
 
-    @field_validator("extra_scan_dirs", mode="before")
+    @field_validator("api_prefix", mode="after")
     @classmethod
-    def _fix_extra_dirs(cls, v: Any) -> List[str]:
-        return _parse_str_list(v)
+    def _normalize_prefix(cls, v: str) -> str:
+        v = "/" + v.lstrip("/")
+        return v.rstrip("/") or "/api"
 
-    @model_validator(mode="after")
-    def _fill_derived(self) -> "Settings":
-        # tg_token/bot_token mirror
-        if not self.tg_token and self.bot_token:
-            self.tg_token = self.bot_token
-        if not self.bot_token and self.tg_token:
-            self.bot_token = self.tg_token
+    @property
+    def inbox_dir(self) -> str:
+        return self.data_inbox
 
-        # derive gRPC from HTTP if missing
-        if not self.weaviate_grpc_url:
-            try:
-                u = urlparse(self.weaviate_url)
-                host = (u.netloc or u.path).split("@")[-1]  # handle userinfo if any
-                host = host.split(":")[0] if ":" in host else host
-                if host:
-                    self.weaviate_grpc_url = f"grpc://{host}:50051"
-            except Exception:
-                # leave as None if parsing failed
-                pass
+    @property
+    def sources_dir(self) -> str:
+        return self.data_sources
 
-        # bot_api_url default to api container + prefix
-        if not self.bot_api_url:
-            self.bot_api_url = f"http://api:8000{self.api_prefix}"
+    @property
+    def out_dir(self) -> str:
+        return self.data_processed
 
-        return self
+    @property
+    def weaviate_url(self) -> str:
+        return f"{self.weaviate_scheme}://{self.weaviate_host}:{self.weaviate_port}"
+
+    @property
+    def weaviate_grpc_url(self) -> str:
+        return f"{self.weaviate_scheme}://{self.weaviate_host}:{self.weaviate_grpc_port}"
 
 
-# Singleton for easy import
-settings = Settings()
+def pick_ollama_model(
+    accel: Optional[str], cpu_model: str, gpu_model: str, explicit: Optional[str] = None
+) -> str:
+    if explicit:
+        return explicit
+    if accel == "gpu":
+        return gpu_model
+    return cpu_model
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+__all__ = ["Settings", "get_settings", "pick_ollama_model"]

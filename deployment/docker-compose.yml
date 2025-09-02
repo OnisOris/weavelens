@@ -3,8 +3,8 @@ services:
     image: cr.weaviate.io/semitechnologies/weaviate:latest
     restart: unless-stopped
     ports:
-      - "8080:8080"
-      - "50051:50051"
+      - "8080:8080"      # REST
+      - "50051:50051"    # gRPC
     environment:
       CLUSTER_HOSTNAME: "node1"
       DEFAULT_VECTORIZER_MODULE: "none"
@@ -16,6 +16,7 @@ services:
     volumes:
       - ../data/weaviate:/var/lib/weaviate
     healthcheck:
+      # У weaviate образа обычно есть wget
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/v1/.well-known/ready"]
       interval: 5s
       timeout: 3s
@@ -31,24 +32,24 @@ services:
     volumes:
       - ../models:/root/.ollama
     environment:
-      OLLAMA_HOST: "0.0.0.0"
-      OLLAMA_NUM_GPU_LAYERS: "${OLLAMA_NUM_GPU_LAYERS:-0}"
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_NUM_GPU_LAYERS=${OLLAMA_NUM_GPU_LAYERS:-0}
     restart: unless-stopped
     profiles: ["cpu"]
 
   # ------------ Ollama (GPU/NVIDIA) ------------
   ollama-gpu:
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest   # для AMD можно заменить на ollama/ollama:rocm
     container_name: deployment-ollama-1
     ports:
       - "11434:11434"
     volumes:
       - ../models:/root/.ollama
     environment:
-      OLLAMA_HOST: "0.0.0.0"
-      OLLAMA_NUM_GPU_LAYERS: "${OLLAMA_NUM_GPU_LAYERS:-999}"
-      NVIDIA_VISIBLE_DEVICES: "all"
-      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_NUM_GPU_LAYERS=${OLLAMA_NUM_GPU_LAYERS:-999}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     gpus: all
     restart: unless-stopped
     profiles: ["gpu"]
@@ -56,7 +57,7 @@ services:
       default:
         aliases: [ollama]
 
-  # ------------ API (server, с Weaviate) ------------
+  # ------------ API (режим server, с Weaviate) ------------
   api:
     build:
       context: ..
@@ -64,21 +65,21 @@ services:
     env_file:
       - ../.env
     environment:
-      OLLAMA_HOST: "deployment-ollama-1"
-      WEAVIATE_HOST: "weaviate"
-      WEAVELENS_PROFILE: "server"
-      EXTRA_SCAN_DIRS: '${EXTRA_SCAN_DIRS:-["/data/inbox","/app/data/inbox"]}'
-      TG_ALLOWLIST: '${TG_ALLOWLIST:-[233016635]}'
+      # в кластере обращаемся к контейнеру ollama по container_name,
+      # который одинаков в обоих профилях (cpu/gpu)
+      - OLLAMA_HOST=deployment-ollama-1
+      - WEAVIATE_HOST=weaviate
+      - WEAVELENS_PROFILE=server
     volumes:
       - ../data:/app/data
       - ../models:/app/models
-      - ../data/inbox:/data/inbox
     ports:
-      - "${API_HOST_PORT:-8000}:8000"
+      - "8000:8000"
     depends_on:
       weaviate:
         condition: service_healthy
     healthcheck:
+      # используем python, чтобы не тащить curl/wget в образ API
       test:
         [
           "CMD-SHELL",
@@ -91,7 +92,7 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # ------------ API (embedded, без Weaviate) ------------
+  # ------------ API (режим embedded, без Weaviate) ------------
   api-embedded:
     build:
       context: ..
@@ -99,16 +100,13 @@ services:
     env_file:
       - ../.env
     environment:
-      OLLAMA_HOST: "deployment-ollama-1"
-      WEAVELENS_PROFILE: "embedded"
-      EXTRA_SCAN_DIRS: '${EXTRA_SCAN_DIRS:-["/data/inbox","/app/data/inbox"]}'
-      TG_ALLOWLIST: '${TG_ALLOWLIST:-[233016635]}'
+      - OLLAMA_HOST=deployment-ollama-1
+      - WEAVELENS_PROFILE=embedded
     volumes:
       - ../data:/app/data
       - ../models:/app/models
-      - ../data/inbox:/data/inbox
     ports:
-      - "${API_HOST_PORT:-8000}:8000"
+      - "8000:8000"
     healthcheck:
       test:
         [
@@ -122,7 +120,7 @@ services:
     restart: unless-stopped
     profiles: ["embedded"]
 
-  # ------------ Bot (server) ------------
+  # ------------ Bot (для server-режима) ------------
   bot:
     build:
       context: ..
@@ -130,17 +128,16 @@ services:
     env_file:
       - ../.env
     environment:
-      BOT_API_URL: "http://api:8000/api"
+      - BOT_API_URL=http://api:8000/api
     volumes:
       - ../data:/app/data
-      - ../data/inbox:/data/inbox
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
     profiles: ["server"]
 
-  # ------------ Bot (embedded) ------------
+  # ------------ Bot (для embedded-режима) ------------
   bot-embedded:
     build:
       context: ..
@@ -148,13 +145,11 @@ services:
     env_file:
       - ../.env
     environment:
-      BOT_API_URL: "http://api-embedded:8000/api"
+      - BOT_API_URL=http://api-embedded:8000/api
     volumes:
       - ../data:/app/data
-      - ../data/inbox:/data/inbox
     depends_on:
       api-embedded:
         condition: service_healthy
     restart: unless-stopped
     profiles: ["embedded"]
-

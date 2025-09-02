@@ -23,7 +23,6 @@ urls = {Homepage = "https://github.com/OnisOris/weavelens"}
 
 dependencies = [
   "pydantic>=2",
-  "pydantic-settings>=2.2",
   "python-dotenv>=1.0",
   "pydantic-settings>=2.3",
   "httpx>=0.27",
@@ -33,16 +32,19 @@ dependencies = [
 
 [project.optional-dependencies]
 api = [
-  "fastapi",
-  "uvicorn[standard]>=0.30",
-  "watchfiles>=0.21",
-  "sentence-transformers>=3.0",
-  "numpy>=1.26",
-  "scikit-learn>=1.5",
-  "prometheus-client>=0.20",
-  "pypdf>=4.2",
-  "python-docx>=1.1.2",
-  "cryptography>=43.0"
+      "fastapi",
+      "uvicorn[standard]>=0.30",
+      "watchfiles>=0.21",
+      "sentence-transformers>=3.0",
+      "numpy>=1.26",
+      "scikit-learn>=1.5",
+      "prometheus-client>=0.20",
+      "pypdf>=4.2",
+      "python-docx>=1.1.2",
+      "cryptography>=43.0",
+      "pillow>=10.0",
+      "pytesseract>=0.3.10",
+      "pymupdf>=1.24.0"
 ]
 
 bot = [
@@ -50,6 +52,24 @@ bot = [
 ]
 
 llm = ["ollama>=0.3"]
+
+all = [
+      "fastapi",
+      "uvicorn[standard]>=0.30",
+      "watchfiles>=0.21",
+      "sentence-transformers>=3.0",
+      "numpy>=1.26",
+      "scikit-learn>=1.5",
+      "prometheus-client>=0.20",
+      "pypdf>=4.2",
+      "python-docx>=1.1.2",
+      "cryptography>=43.0",
+      "aiogram>=3,<4",
+      "ollama>=0.3",
+      "pillow>=10.0",
+      "pytesseract>=0.3.10",
+      "pymupdf>=1.24.0"
+]
 
 [project.scripts]
 weavelens-api = "weavelens.api.main:run"
