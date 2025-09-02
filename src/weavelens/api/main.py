@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from weavelens.settings import get_settings
 from weavelens.api.routers import health, search, ingest
+from weavelens.api.routers import bot_intent
 
 
 settings = get_settings()
@@ -12,6 +13,7 @@ app = FastAPI(title="WeaveLens API")
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
 app.include_router(search.router, prefix=settings.api_prefix, tags=["search"])
 app.include_router(ingest.router, prefix=settings.api_prefix, tags=["ingest"])
+app.include_router(bot_intent.router, prefix=settings.api_prefix, tags=["bot"])
 
 
 def run() -> None:
@@ -25,4 +27,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

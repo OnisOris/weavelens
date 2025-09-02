@@ -70,6 +70,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MODELS_CACHE", "HF_HOME", "TRANSFORMERS_CACHE"),
     )
 
+    # -------- OCR / Extraction --------
+    ocr_enabled: bool = Field(default=True, alias="OCR_ENABLED")
+    ocr_langs: str = Field(default="rus+eng", alias="OCR_LANGS")
+    ocr_pdf_zoom: float = Field(default=2.0, alias="OCR_PDF_ZOOM")
+    ocr_min_page_text_len: int = Field(default=20, alias="OCR_MIN_PAGE_TEXT_LEN")
+
     # -------- Security --------
     encrypt_content: bool = Field(default=False, alias="ENCRYPT_CONTENT")
     fernet_key: Optional[str] = Field(default=None, alias="FERNET_KEY")
@@ -141,4 +147,3 @@ def get_settings() -> Settings:
 
 
 __all__ = ["Settings", "get_settings", "pick_ollama_model"]
-

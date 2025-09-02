@@ -278,6 +278,56 @@ async def cmd_ask(m: Message):
         await m.reply(f"Ошибка запроса /ask: {e}")
 
 
+# --------------------- СВОБОДНЫЙ ТЕКСТ ----------------------
+async def _route_free_text(m: Message):
+    # Игнорируем команды — их обрабатывают специализированные хендлеры
+    if (m.text or "").strip().startswith("/"):
+        return
+    if not _is_allowed(m.from_user.id if m.from_user else None):
+        return await m.reply("Доступ закрыт.")
+    text = (m.text or "").strip()
+    if not text:
+        return await m.reply("Пришлите текстовое сообщение или используйте /help.")
+    try:
+        intent, used_base = await _post_json_with_fallback("/bot/intent", {"text": text}, timeout=30.0)
+        action = (intent.get("action") or "unknown").lower()
+        query = (intent.get("query") or "").strip() or text
+    except Exception as e:
+        logger.exception("intent detection failed")
+        return await m.reply("Не удалось распознать команду. Попробуйте /help или /search <запрос>.")
+
+    # Маршрутизация
+    if action == "scan":
+        return await cmd_scan(m)
+    if action == "help":
+        return await cmd_help(m)
+    if action == "search":
+        # вызов /search с query
+        try:
+            data, used_base = await _post_json_with_fallback("/search", {"q": query, "k": 8}, timeout=60.0)
+            hits = data.get("hits", [])
+            text = _format_hits(hits)
+            return await _reply_long(m, text, footer=f"\n\n(API: {used_base})")
+        except Exception as e:
+            logger.exception("search failed (free text)")
+            return await m.reply(f"Ошибка запроса поиска: {e}")
+    if action == "ask" or action == "unknown":
+        try:
+            data, used_base = await _post_json_with_fallback("/ask", {"q": query, "k": 6}, timeout=180.0)
+            answer = (data.get("answer") or {}).get("text") or ""
+            if answer and not answer.strip().startswith("[LLM недоступна"):
+                return await _reply_long(m, answer.strip(), footer=f"\n\n(API: {used_base})")
+            hits = data.get("hits", [])[:3]
+            if hits:
+                text = "[LLM недоступна — вернул релевантные фрагменты]\n\n" + _format_hits(hits)
+            else:
+                text = "[LLM недоступна — релевантных фрагментов нет]"
+            return await _reply_long(m, text, footer=f"\n\n(API: {used_base})")
+        except Exception as e:
+            logger.exception("ask failed (free text)")
+            return await m.reply(f"Ошибка запроса: {e}")
+
+
 # ---------------------- ЗАПУСК ПРИЛОЖЕНИЯ --------------------
 async def run_async():
     global _API_BASE
@@ -298,6 +348,8 @@ async def run_async():
     dp.message.register(cmd_scan, Command("scan"))
     dp.message.register(cmd_search, Command("search"))
     dp.message.register(cmd_ask,    Command("ask"))
+    # Любые прочие текстовые сообщения — через LLM-маршрутизатор
+    dp.message.register(_route_free_text)
 
     bot = Bot(token)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

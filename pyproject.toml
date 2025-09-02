@@ -41,7 +41,10 @@ api = [
       "prometheus-client>=0.20",
       "pypdf>=4.2",
       "python-docx>=1.1.2",
-      "cryptography>=43.0"
+      "cryptography>=43.0",
+      "pillow>=10.0",
+      "pytesseract>=0.3.10",
+      "pymupdf>=1.24.0"
 ]
 
 bot = [
@@ -62,7 +65,10 @@ all = [
       "python-docx>=1.1.2",
       "cryptography>=43.0",
       "aiogram>=3,<4",
-      "ollama>=0.3"
+      "ollama>=0.3",
+      "pillow>=10.0",
+      "pytesseract>=0.3.10",
+      "pymupdf>=1.24.0"
 ]
 
 [project.scripts]
