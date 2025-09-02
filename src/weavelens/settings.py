@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # -------- Weaviate (server) --------
     weaviate_host: str = Field(default="weaviate", alias="WEAVIATE_HOST")
     weaviate_port: int = Field(default=8080, alias="WEAVIATE_PORT")
+    weaviate_grpc_port: int = Field(default=50051, alias="WEAVIATE_GRPC_PORT")
     weaviate_scheme: str = Field(default="http", alias="WEAVIATE_SCHEME")
     weaviate_api_key: Optional[str] = Field(default=None, alias="WEAVIATE_API_KEY")
 
@@ -114,6 +115,14 @@ class Settings(BaseSettings):
     @property
     def out_dir(self) -> str:
         return self.data_processed
+
+    @property
+    def weaviate_url(self) -> str:
+        return f"{self.weaviate_scheme}://{self.weaviate_host}:{self.weaviate_port}"
+
+    @property
+    def weaviate_grpc_url(self) -> str:
+        return f"{self.weaviate_scheme}://{self.weaviate_host}:{self.weaviate_grpc_port}"
 
 
 def pick_ollama_model(
