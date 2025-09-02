@@ -29,6 +29,10 @@ def _connect() -> weaviate.WeaviateClient:
 def client() -> weaviate.WeaviateClient:
     return _connect()
 
+
+def get_client() -> weaviate.WeaviateClient:  # backward compat
+    return client()
+
 def _ensure_schema(c: weaviate.WeaviateClient) -> None:
     # document
     if not c.collections.exists(DOCUMENT_COLLECTION):

@@ -7,17 +7,17 @@ def fail(name, msg):
     print(f"[FAIL] {name}: {msg}")
     raise SystemExit(1)
 
-# 1. main.py has include_router with prefix="/api"
+# 1. main.py uses settings.api_prefix for routers
 main = (root / "src/weavelens/api/main.py").read_text(encoding="utf-8")
-if re.search(r'include_router\(\s*health\.router\s*,\s*prefix\s*=\s*"/api"', main):
-    ok("main.py mounts health under /api")
+if re.search(r'include_router\(\s*health\.router\s*,\s*prefix\s*=\s*settings\.api_prefix', main):
+    ok("main.py mounts health with settings.api_prefix")
 else:
-    fail("main.py mounts health", "prefix='/api' not found for health")
+    fail("main.py mounts health", "settings.api_prefix not used for health")
 
-if re.search(r'include_router\(\s*search\.router\s*,\s*prefix\s*=\s*"/api"', main):
-    ok("main.py mounts search under /api")
+if re.search(r'include_router\(\s*search\.router\s*,\s*prefix\s*=\s*settings\.api_prefix', main):
+    ok("main.py mounts search with settings.api_prefix")
 else:
-    fail("main.py mounts search", "prefix='/api' not found for search")
+    fail("main.py mounts search", "settings.api_prefix not used for search")
 
 # 2. health.py defines endpoints live/ready/health
 hp = (root / "src/weavelens/api/routers/health.py").read_text(encoding="utf-8")

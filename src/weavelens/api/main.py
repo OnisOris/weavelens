@@ -6,14 +6,13 @@ from fastapi import FastAPI
 from weavelens.settings import get_settings
 from weavelens.api.routers import health, search, ingest
 
+
 settings = get_settings()
-
 app = FastAPI(title="WeaveLens API")
-
-# Префикс берём из настроек
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
 app.include_router(search.router, prefix=settings.api_prefix, tags=["search"])
 app.include_router(ingest.router, prefix=settings.api_prefix, tags=["ingest"])
+
 
 def run() -> None:
     uvicorn.run(
@@ -23,5 +22,7 @@ def run() -> None:
         reload=False,
     )
 
+
 if __name__ == "__main__":
     run()
+

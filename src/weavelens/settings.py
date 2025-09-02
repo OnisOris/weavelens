@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import List, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     jwt_secret: Optional[str] = Field(default=None, alias="JWT_SECRET")
-    api_prefix: str = Field(default="/api", alias="API_PREFIX")  # <-- добавили
+    api_prefix: str = Field(default="/api", alias="API_PREFIX")
 
     # -------- WeaveLens --------
     weavelens_offline: bool = Field(default=False, alias="WEAVELENS_OFFLINE")
@@ -48,10 +48,26 @@ class Settings(BaseSettings):
     ollama_num_gpu_layers: int = Field(default=0, alias="OLLAMA_NUM_GPU_LAYERS")
 
     # -------- Paths --------
-    data_inbox: str = Field(default="/app/data/inbox", alias="DATA_INBOX")
-    data_sources: str = Field(default="/app/data/sources", alias="DATA_SOURCES")
-    data_processed: str = Field(default="/app/data/processed", alias="DATA_PROCESSED")
-    models_cache: str = Field(default="/app/models/cache", alias="MODELS_CACHE")
+    data_inbox: str = Field(
+        default="/app/data/inbox",
+        alias="DATA_INBOX",
+        validation_alias=AliasChoices("DATA_INBOX", "INBOX_DIR"),
+    )
+    data_sources: str = Field(
+        default="/app/data/sources",
+        alias="DATA_SOURCES",
+        validation_alias=AliasChoices("DATA_SOURCES", "SOURCES_DIR"),
+    )
+    data_processed: str = Field(
+        default="/app/data/processed",
+        alias="DATA_PROCESSED",
+        validation_alias=AliasChoices("DATA_PROCESSED", "OUT_DIR", "PROCESSED_DIR"),
+    )
+    models_cache: str = Field(
+        default="/app/models/cache",
+        alias="MODELS_CACHE",
+        validation_alias=AliasChoices("MODELS_CACHE", "HF_HOME", "TRANSFORMERS_CACHE"),
+    )
 
     # -------- Security --------
     encrypt_content: bool = Field(default=False, alias="ENCRYPT_CONTENT")
@@ -68,6 +84,13 @@ class Settings(BaseSettings):
     @field_validator("tg_allowlist", mode="before")
     @classmethod
     def _parse_allowlist(cls, v):
+        """
+        TG_ALLOWLIST может быть:
+        - пусто
+        - '1,2,3'
+        - список ['1','2',...]
+        Приводим к List[int].
+        """
         if v in (None, "", []):
             return []
         if isinstance(v, list):
@@ -77,18 +100,36 @@ class Settings(BaseSettings):
     @field_validator("api_prefix", mode="after")
     @classmethod
     def _normalize_prefix(cls, v: str) -> str:
-        # гарантируем ведущий слэш и убираем хвостовой
         v = "/" + v.lstrip("/")
         return v.rstrip("/") or "/api"
+
+    @property
+    def inbox_dir(self) -> str:
+        return self.data_inbox
+
+    @property
+    def sources_dir(self) -> str:
+        return self.data_sources
+
+    @property
+    def out_dir(self) -> str:
+        return self.data_processed
+
+
+def pick_ollama_model(
+    accel: Optional[str], cpu_model: str, gpu_model: str, explicit: Optional[str] = None
+) -> str:
+    if explicit:
+        return explicit
+    if accel == "gpu":
+        return gpu_model
+    return cpu_model
 
 
 @lru_cache
 def get_settings() -> Settings:
-    # Лениво читаем .env один раз за процесс
     return Settings()
 
 
-# Если хочется иметь модульную переменную — можно раскомментировать:
-# settings = get_settings()
+__all__ = ["Settings", "get_settings", "pick_ollama_model"]
 
-__all__ = ["Settings", "get_settings"]

@@ -1,39 +1,35 @@
-
 from __future__ import annotations
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter
-from pydantic import BaseModel
+
+from pathlib import Path
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+
 from weavelens.settings import get_settings
-from weavelens.pipeline.index import scan_and_index
-settings = get_settings()
 
 
 router = APIRouter()
 
-class ScanIn(BaseModel):
-    paths: Optional[List[str]] = None
 
 @router.post("/ingest/scan")
-async def ingest_scan(body: ScanIn):
-    scan_paths: List[str] = []
-    # always include INBOX_DIR
-    if settings.inbox_dir:
-        scan_paths.append(settings.inbox_dir)
-    # add env extra dirs
-    if settings.extra_scan_dirs:
-        for p in settings.extra_scan_dirs.split(","):
-            p = p.strip()
-            if p:
-                scan_paths.append(p)
-    # add request-provided
-    if body.paths:
-        scan_paths.extend(body.paths)
-    # dedupe
-    seen = []
-    sset = set()
-    for p in scan_paths:
-        if p not in sset:
-            seen.append(p)
-            sset.add(p)
-    stats = scan_and_index(seen)
-    return stats
+async def ingest_scan():
+    """
+    Простой скан входной директории.
+    Возвращает список файлов (усечённый), чтобы проверить wiring.
+    """
+
+    settings = get_settings()
+    inbox = Path(settings.inbox_dir)
+    if not inbox.exists():
+        raise HTTPException(status_code=400, detail=f"inbox_dir does not exist: {inbox}")
+    if not inbox.is_dir():
+        raise HTTPException(status_code=400, detail=f"inbox_dir is not a directory: {inbox}")
+
+    entries: List[Path] = [p for p in inbox.iterdir() if p.is_file()]
+    sample = entries[:50]
+    return {
+        "inbox_dir": str(inbox),
+        "count": len(entries),
+        "sample": [p.name for p in sample],
+    }
+

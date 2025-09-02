@@ -32,16 +32,16 @@ dependencies = [
 
 [project.optional-dependencies]
 api = [
-  "fastapi",
-  "uvicorn[standard]>=0.30",
-  "watchfiles>=0.21",
-  "sentence-transformers>=3.0",
-  "numpy>=1.26",
-  "scikit-learn>=1.5",
-  "prometheus-client>=0.20",
-  "pypdf>=4.2",
-  "python-docx>=1.1.2",
-  "cryptography>=43.0"
+      "fastapi",
+      "uvicorn[standard]>=0.30",
+      "watchfiles>=0.21",
+      "sentence-transformers>=3.0",
+      "numpy>=1.26",
+      "scikit-learn>=1.5",
+      "prometheus-client>=0.20",
+      "pypdf>=4.2",
+      "python-docx>=1.1.2",
+      "cryptography>=43.0"
 ]
 
 bot = [
@@ -49,6 +49,21 @@ bot = [
 ]
 
 llm = ["ollama>=0.3"]
+
+all = [
+      "fastapi",
+      "uvicorn[standard]>=0.30",
+      "watchfiles>=0.21",
+      "sentence-transformers>=3.0",
+      "numpy>=1.26",
+      "scikit-learn>=1.5",
+      "prometheus-client>=0.20",
+      "pypdf>=4.2",
+      "python-docx>=1.1.2",
+      "cryptography>=43.0",
+      "aiogram>=3,<4",
+      "ollama>=0.3"
+]
 
 [project.scripts]
 weavelens-api = "weavelens.api.main:run"
