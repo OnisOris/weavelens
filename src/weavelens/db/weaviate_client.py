@@ -4,7 +4,9 @@ from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 import weaviate
 from weaviate.classes.config import Property, DataType, Configure
-from weavelens.settings import settings
+from weavelens.settings import get_settings
+
+settings = get_settings()
 
 _client: Optional[weaviate.WeaviateClient] = None
 

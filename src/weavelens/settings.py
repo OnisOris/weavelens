@@ -1,4 +1,6 @@
-# src/weavelens/settings.py
+from __future__ import annotations
+
+from functools import lru_cache
 from typing import List, Optional
 
 from pydantic import Field, field_validator
@@ -15,6 +17,7 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     jwt_secret: Optional[str] = Field(default=None, alias="JWT_SECRET")
+    api_prefix: str = Field(default="/api", alias="API_PREFIX")  # <-- добавили
 
     # -------- WeaveLens --------
     weavelens_offline: bool = Field(default=False, alias="WEAVELENS_OFFLINE")
@@ -54,27 +57,38 @@ class Settings(BaseSettings):
     encrypt_content: bool = Field(default=False, alias="ENCRYPT_CONTENT")
     fernet_key: Optional[str] = Field(default=None, alias="FERNET_KEY")
 
-    # pydantic-settings v2
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-        populate_by_name=True,  # разрешаем и alias, и имена полей
+        populate_by_name=True,
     )
 
     @field_validator("tg_allowlist", mode="before")
     @classmethod
     def _parse_allowlist(cls, v):
-        """
-        TG_ALLOWLIST может быть:
-        - пусто
-        - '1,2,3'
-        - список ['1','2',...]
-        Приводим к List[int].
-        """
         if v in (None, "", []):
             return []
         if isinstance(v, list):
             return [int(x) for x in v]
         return [int(x) for x in str(v).replace(";", ",").split(",") if str(x).strip()]
+
+    @field_validator("api_prefix", mode="after")
+    @classmethod
+    def _normalize_prefix(cls, v: str) -> str:
+        # гарантируем ведущий слэш и убираем хвостовой
+        v = "/" + v.lstrip("/")
+        return v.rstrip("/") or "/api"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    # Лениво читаем .env один раз за процесс
+    return Settings()
+
+
+# Если хочется иметь модульную переменную — можно раскомментировать:
+# settings = get_settings()
+
+__all__ = ["Settings", "get_settings"]

@@ -2,10 +2,12 @@
 from __future__ import annotations
 import os, hashlib
 from typing import List, Tuple, Dict, Any
-from weavelens.settings import settings
+from weavelens.settings import get_settings
 from weavelens.db import weaviate_client as wv
 from pypdf import PdfReader
 from docx import Document as DocxDocument
+settings = get_settings()
+
 
 SUPPORTED = {".txt", ".md", ".pdf", ".docx"}
 

@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter
 from pydantic import BaseModel
-from weavelens.settings import settings
+from weavelens.settings import get_settings
 from weavelens.pipeline.index import scan_and_index
+settings = get_settings()
+
 
 router = APIRouter()
 

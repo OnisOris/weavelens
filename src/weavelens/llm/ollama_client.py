@@ -1,7 +1,9 @@
 
 from __future__ import annotations
 import httpx
-from weavelens.settings import settings
+from weavelens.settings import get_settings
+
+settings = get_settings()
 
 class OllamaError(Exception):
     pass
