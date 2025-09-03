@@ -192,3 +192,30 @@ docker compose -f deployment/docker-compose.yml down
 - `TG_ALLOWLIST` — список Telegram‑ID через запятую (пусто = бот доступен всем).
 - Обязательно смените `JWT_SECRET` и `TG_BOT_TOKEN`.
 - Для шифрования: `ENCRYPT_CONTENT=true` и валидный `FERNET_KEY`.
+
+—
+
+## Мультихост (микросервисы на разных серверах)
+
+Базовый сценарий: API‑стек (Weaviate + Ollama + API) на сервере A, Telegram‑бот — на сервере B.
+
+- Сервер A (API): используйте существующий compose и поднимите стек без бота:
+  - CPU: `docker compose -f deployment/docker-compose.yml --profile cpu --profile server up -d weaviate ollama api`
+  - GPU: `docker compose -f deployment/docker-compose.yml --profile gpu --profile server up -d weaviate ollama-gpu api`
+  - Вынесите API наружу через реверс‑прокси с TLS (например, `https://api.example.com/api`).
+  - Проверка: `curl -s https://api.example.com/api/ready` → `{ "status": "ready" }`.
+
+- Сервер B (Bot): отдельный compose для бота на другом сервере:
+  - Скопируйте `.env` и укажите как минимум `TG_BOT_TOKEN` и `BOT_API_URL=https://api.example.com/api`.
+  - Запуск: `docker compose -f deployment/docker-compose.bot.yml up -d --build`.
+
+Заметки по сети и безопасности:
+- Бот обращается к API по HTTP(S); CORS не требуется.
+- Закройте Ollama (11434) и Weaviate (8080/50051) от внешнего мира; публикуйте только API.
+- Ограничьте доступ к изменяющим эндпоинтам API (`/ingest/scan`) — IP‑лист, аутентификация на прокси, VPN.
+- Если у бота (сервер B) нет прямого доступа к Telegram, используйте `TG_PROXY_URL` и/или self‑hosted `TG_API_BASE` (см. раздел выше).
+
+Дополнительно (глубокая микросервисная разбивка):
+- Можно вынести Ollama и/или Weaviate на отдельные серверы и в `.env` API указать их внешние адреса:
+  - `OLLAMA_HOST=<ip/домен>` (порт 11434, доступ только с сервера API);
+  - `WEAVIATE_HOST=<ip/домен>` (порты 8080/50051, доступ только с сервера API).
