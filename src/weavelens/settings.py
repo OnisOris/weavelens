@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     tg_token: Optional[str] = Field(default=None, alias="TG_BOT_TOKEN")
     tg_allowlist: List[int] = Field(default_factory=list, alias="TG_ALLOWLIST")
     bot_api_url: Optional[str] = Field(default=None, alias="BOT_API_URL")
+    # Корпоративный прокси/зеркало для Telegram
+    tg_proxy_url: Optional[str] = Field(default=None, alias="TG_PROXY_URL")
+    tg_proxy_username: Optional[str] = Field(default=None, alias="TG_PROXY_USERNAME")
+    tg_proxy_password: Optional[str] = Field(default=None, alias="TG_PROXY_PASSWORD")
+    # Кастомный базовый адрес Telegram Bot API (например, self-hosted сервер)
+    tg_api_base: Optional[str] = Field(default=None, alias="TG_API_BASE")
 
     # -------- API --------
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")

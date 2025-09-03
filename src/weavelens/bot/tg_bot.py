@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiohttp import BasicAuth
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -351,7 +354,37 @@ async def run_async():
     # Любые прочие текстовые сообщения — через LLM-маршрутизатор
     dp.message.register(_route_free_text)
 
-    bot = Bot(token)
+    # Настраиваем опциональный прокси и/или альтернативный Telegram API server
+    proxy = (
+        s.tg_proxy_url
+        or os.getenv("TG_PROXY_URL")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or os.getenv("ALL_PROXY")
+    )
+    proxy_auth = None
+    user = s.tg_proxy_username or os.getenv("TG_PROXY_USERNAME")
+    pwd = s.tg_proxy_password or os.getenv("TG_PROXY_PASSWORD")
+    if proxy and user and pwd:
+        proxy_auth = BasicAuth(user, pwd)
+
+    session = AiohttpSession(proxy=proxy, proxy_auth=proxy_auth) if proxy else None
+
+    server = None
+    tg_api_base = s.tg_api_base or os.getenv("TG_API_BASE")
+    if tg_api_base:
+        try:
+            server = TelegramAPIServer.from_base(tg_api_base.rstrip("/"))
+        except Exception as e:
+            logger.warning("Некорректный TG_API_BASE '%s': %s — игнорирую", tg_api_base, e)
+            server = None
+
+    if proxy:
+        logger.info("Using Telegram proxy: %s%s", proxy, " (auth)" if proxy_auth else "")
+    if server:
+        logger.info("Using custom Telegram API base: %s", tg_api_base)
+
+    bot = Bot(token, session=session, server=server) if (session or server) else Bot(token)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 

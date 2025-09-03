@@ -112,6 +112,17 @@ print('HTTP status:', r.status); print('models:', [m['model'] for m in json.load
 
 —
 
+### Бот за корпоративным прокси
+
+Если в корпоративной сети блокируется доступ к `api.telegram.org`, включите прокси для бота:
+
+- В `.env` задайте `TG_PROXY_URL` (HTTP/HTTPS прокси), при необходимости `TG_PROXY_USERNAME` и `TG_PROXY_PASSWORD`.
+- Для self-hosted Telegram Bot API укажите `TG_API_BASE` (например, `https://tg.example.com`).
+
+Эти переменные подхватываются сервисом `bot` автоматически через `env_file`.
+
+—
+
 ## Ингест и поиск через API
 
 - Файлы кладите в `data/inbox/`.
@@ -181,4 +192,3 @@ docker compose -f deployment/docker-compose.yml down
 - `TG_ALLOWLIST` — список Telegram‑ID через запятую (пусто = бот доступен всем).
 - Обязательно смените `JWT_SECRET` и `TG_BOT_TOKEN`.
 - Для шифрования: `ENCRYPT_CONTENT=true` и валидный `FERNET_KEY`.
-
